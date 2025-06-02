@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>To-Do App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" />
+  <style>
+    body {
+      font-family: 'Poppins', sans-serif;
+    }
+    .snackbar {
+      visibility: hidden;
+      min-width: 250px;
+      margin-left: -125px;
+      background-color: #4a4848;
+      color: #fff;
+      text-align: center;
+      border-radius: 10px;
+      padding: 12px;
+      position: fixed;
+      z-index: 1;
+      left: 50%;
+      bottom: 30px;
+      font-size: 16px;
+    }
+    .snackbar.show {
+      visibility: visible;
+      animation: fadein 0.5s, fadeout 0.5s 2.5s;
+    }
+    @keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
+    @keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
+    .subtask-checkbox {
+      margin-right: 8px;
+    }
+    .dragging {
+      opacity: 0.5;
+    }
+    .fade-in {
+      animation: fadeIn 0.5s ease-in;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .button-hover:hover {
+      transform: scale(1.05);
+      transition: transform 0.2s ease;
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-tr from-gray-900 via-indigo-900 to-black text-white min-h-screen p-6">
+  <div class="max-w-4xl mx-auto">
+    <h1 class="text-4xl font-bold text-center mb-6 text-indigo-400 animate-pulse">⚡ To-Do Manager</h1>
+    <div class="bg-gray-800 rounded-xl p-6 mb-6 shadow-xl space-y-4 fade-in">
+      <input id="task-title" type="text" placeholder="Task Title" class="w-full px-4 py-2 rounded-md bg-gray-700 focus:outline-none transition duration-300 focus:ring-2 focus:ring-indigo-500" />
+      <textarea id="task-desc" placeholder="(Optional) Description" rows="2" class="w-full px-4 py-2 rounded-md bg-gray-700 focus:outline-none transition duration-300 focus:ring-2 focus:ring-indigo-500"></textarea>
+      <div class="grid md:grid-cols-5 gap-4">
+        <input id="task-date" type="date" class="w-full px-4 py-2 rounded-md bg-gray-700 focus:outline-none transition duration-300 focus:ring-2 focus:ring-indigo-500" />
+        <input id="task-time" type="time" class="w-full px-4 py-2 rounded-md bg-gray-700 focus:outline-none transition duration-300 focus:ring-2 focus:ring-indigo-500" />
+        <select id="task-tag" class="w-full px-4 py-2 rounded-md bg-gray-700 focus:outline-none font-semibold transition duration-300 focus:ring-2 focus:ring-indigo-500">
+          <option value="" disabled selected>Add Tag</option>
+          <option value="General">General</option>
+          <option value="Work">Work</option>
+          <option value="Personal">Personal</option>
+          <option value="Urgent">Urgent</option>
+          <option value="Other">Other</option>
+        </select>
+        <select id="task-priority" class="w-full px-4 py-2 rounded-md bg-gray-700 focus:outline-none font-semibold transition duration-300 focus:ring-2 focus:ring-indigo-500">
+          <option value="" disabled selected>Priority</option>
+          <option value="Low">Low</option>
+          <option value="Normal">Normal</option>
+          <option value="High">High</option>
+          <option value="Critical">Critical</option>
+        </select>
+        <select id="task-repeat" class="w-full px-4 py-2 rounded-md bg-gray-700 focus:outline-none font-semibold transition duration-300 focus:ring-2 focus:ring-indigo-500">
+          <option value="" disabled selected>Repeate</option>
+          <option value="none">None</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+      <div>
+        <label class="block mb-1 font-semibold">Subtasks (Optional):</label>
+        <div id="subtask-container" class="space-y-2 fade-in"></div>
+        <button type="button" onclick="addSubtaskInput()" class="mt-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-1 px-4 rounded-lg transition text-sm button-hover">Add Subtask</button>
+      </div>
+      <button onclick="addTask()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-6 rounded-lg transition button-hover">Add Task</button>
+    </div>
+    <div class="flex flex-col md:flex-row justify-between gap-4 mb-4 fade-in">
+      <input type="text" id="search" placeholder="Search..." class="w-full md:w-1/2 px-4 py-2 rounded-md bg-gray-700 focus:outline-none transition duration-300 focus:ring-2 focus:ring-indigo-500" oninput="renderTasks()" />
+      <select id="group-by" onchange="renderTasks()" class="w-full md:w-1/4 px-4 py-2 rounded-md bg-gray-700 focus:outline-none transition duration-300 focus:ring-2 focus:ring-indigo-500">
+        <option value="">Group by...</option>
+        <option value="date">Group by Date</option>
+        <option value="priority">Group by Priority</option>
+      </select>
+    </div>
+    <div id="taskList" class="space-y-4 fade-in"></div>
+    <div id="snackbar" class="snackbar fade-in">Task deleted. <a href="#" onclick="undoDelete()" class="text-indigo-300 underline">Undo</a></div>
+  </div>
+<script>
+let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
+let deletedTask = null;
+let dragSrcEl = null;
+
+function saveTasks() {
+  localStorage.setItem("tasks", JSON.stringify(tasks));
+}
+
+function addSubtaskInput(value = "") {
+  const container = document.getElementById("subtask-container");
+  const div = document.createElement("div");
+  div.className = "flex gap-2";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Subtask title";
+  input.value = value;
+  input.className = "flex-grow px-3 py-1 rounded-md bg-gray-700 focus:outline-none";
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.textContent = "×";
+  removeBtn.title = "Remove subtask";
+  removeBtn.className = "bg-red-600 hover:bg-red-500 px-2 rounded text-white font-bold";
+  removeBtn.onclick = () => container.removeChild(div);
+
+  div.appendChild(input);
+  div.appendChild(removeBtn);
+  container.appendChild(div);
+}
+
+function addTask() {
+  const title = document.getElementById("task-title").value.trim();
+  const desc = document.getElementById("task-desc").value.trim();
+  const date = document.getElementById("task-date").value;
+  const time = document.getElementById("task-time").value;
+  const tag = document.getElementById("task-tag").value;
+  const priority = document.getElementById("task-priority").value;
+  const repeat = document.getElementById("task-repeat").value;
+
+  if (!title || !date || !time || !tag || !priority) {
+    alert("Please fill in all required fields.");
+    return;
+  }
+
+  const subtaskInputs = document.querySelectorAll("#subtask-container input[type='text']");
+  const subtasks = [];
+  subtaskInputs.forEach(input => {
+    const val = input.value.trim();
+    if (val) {
+      subtasks.push({ title: val, completed: false, id: Date.now() + Math.random() });
+    }
+  });
+
+  const task = {
+    id: Date.now(),
+    title,
+    desc,
+    date,
+    time,
+    tag,
+    priority,
+    repeat,
+    completed: false,
+    subtasks
+  };
+
+  tasks.push(task);
+  saveTasks();
+  clearForm();
+  renderTasks();
+}
+
+function clearForm() {
+  document.getElementById("task-title").value = "";
+  document.getElementById("task-desc").value = "";
+  document.getElementById("task-date").value = "";
+  document.getElementById("task-time").value = "";
+  document.getElementById("task-tag").selectedIndex = 0;
+  document.getElementById("task-priority").selectedIndex = 0;
+  document.getElementById("task-repeat").selectedIndex = 0;
+  document.getElementById("subtask-container").innerHTML = "";
+}
+
+function renderTasks() {
+  const list = document.getElementById("taskList");
+  const search = document.getElementById("search").value.toLowerCase();
+  const groupBy = document.getElementById("group-by").value;
+
+  list.innerHTML = "";
+  let filtered = tasks.filter(t => t.title.toLowerCase().includes(search));
+  filtered.sort((a, b) => new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time));
+
+  if (groupBy) {
+    const grouped = {};
+    for (const task of filtered) {
+      const k = groupBy === 'date' ? task.date : task.priority;
+      if (!grouped[k]) grouped[k] = [];
+      grouped[k].push(task);
+    }
+    for (const key in grouped) {
+      const groupTitle = document.createElement("h2");
+      groupTitle.className = "text-2xl font-bold mt-6 text-indigo-300";
+      groupTitle.innerText = groupBy === 'date' ? `📅 ${key}` : `⚠️ ${key} Priority`;
+      list.appendChild(groupTitle);
+      grouped[key].forEach(renderTaskCard);
+    }
+  } else {
+    filtered.forEach(renderTaskCard);
+  }
+  enableDragAndDrop();
+}
+
+function renderTaskCard(task) {
+  const div = document.createElement("div");
+  div.className = `task-card rounded-xl p-4 bg-gray-800 border-l-8 cursor-move select-none ${
+    task.priority === "Critical" ? "border-red-500"
+    : task.priority === "High" ? "border-yellow-400"
+    : "border-indigo-500"
+  }`;
+  div.draggable = true;
+  div.dataset.id = task.id;
+
+  let subtasksHtml = "";
+  if (task.subtasks?.length) {
+    subtasksHtml += `<div class="mt-2 space-y-1">`;
+    task.subtasks.forEach(st => {
+      subtasksHtml += `
+        <label class="flex items-center gap-2 text-sm ${st.completed ? 'line-through opacity-50' : ''}">
+          <input type="checkbox" class="subtask-checkbox" ${st.completed ? "checked" : ""} data-taskid="${task.id}" data-subtaskid="${st.id}" />
+          ${st.title}
+        </label>`;
+    });
+    subtasksHtml += `</div>`;
+  }
+
+  div.innerHTML = `
+    <div class="flex justify-between items-center mb-2">
+      <h2 class="text-xl font-semibold ${task.completed ? 'line-through opacity-50' : ''}">${task.title}</h2>
+      <span class="text-sm px-3 py-1 rounded-full ${
+        task.tag === "Work" ? "bg-indigo-500" :
+        task.tag === "Personal" ? "bg-green-500" :
+        task.tag === "Urgent" ? "bg-red-500" :
+        task.tag === "Other" ? "bg-yellow-500" :
+        task.tag === "General" ? "bg-purple-500" :
+        "bg-gray-500"
+      }">${task.tag}</span>
+    </div>
+    ${task.desc ? `<p class="text-sm mb-1">${task.desc}</p>` : ""}
+    <div class="text-sm text-gray-400 mb-2">
+      🗓️ ${task.date} &nbsp;&nbsp; ⏰ ${task.time} &nbsp;&nbsp; ⚡ <strong>${task.priority}</strong> &nbsp;&nbsp; 🔁 <em>${task.repeat === "none" ? "None" : task.repeat.charAt(0).toUpperCase() + task.repeat.slice(1)}</em>
+    </div>
+    ${subtasksHtml}
+    <div class="flex flex-wrap gap-2 mt-3">
+      <button onclick="toggleComplete(${task.id})" class="px-3 py-1 text-sm rounded bg-green-600 hover:bg-green-500">${task.completed ? "Undo" : "Complete"}</button>
+      <button onclick="deleteTask(${task.id})" class="px-3 py-1 text-sm rounded bg-red-600 hover:bg-red-500">Delete</button>
+      <button onclick="editTask(${task.id})" class="px-3 py-1 text-sm rounded bg-blue-600 hover:bg-blue-500">Edit</button>
+    </div>`;
+
+  document.getElementById("taskList").appendChild(div);
+
+  div.querySelectorAll(".subtask-checkbox").forEach(cb => {
+    cb.addEventListener("change", (e) => {
+      toggleSubtaskComplete(+e.target.dataset.taskid, +e.target.dataset.subtaskid);
+    });
+  });
+}
+
+function toggleComplete(id) {
+  const task = tasks.find(t => t.id === id);
+  if (task) task.completed = !task.completed;
+  saveTasks();
+  renderTasks();
+}
+
+function toggleSubtaskComplete(taskId, subtaskId) {
+  const task = tasks.find(t => t.id === taskId);
+  const subtask = task?.subtasks.find(st => st.id === subtaskId);
+  if (subtask) subtask.completed = !subtask.completed;
+  saveTasks();
+  renderTasks();
+}
+
+function deleteTask(id) {
+  deletedTask = tasks.find(t => t.id === id);
+  tasks = tasks.filter(t => t.id !== id);
+  saveTasks();
+  renderTasks();
+  showSnackbar();
+}
+
+function undoDelete() {
+  if (deletedTask) {
+    tasks.push(deletedTask);
+    saveTasks();
+    renderTasks();
+    deletedTask = null;
+  }
+}
+
+function showSnackbar() {
+  const x = document.getElementById("snackbar");
+  x.className = "snackbar show";
+  setTimeout(() => x.className = "snackbar", 3000);
+}
+
+function editTask(id) {
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+  const newTitle = prompt("Edit title:", task.title);
+  if (newTitle !== null) task.title = newTitle.trim() || task.title;
+  const newDesc = prompt("Edit description:", task.desc);
+  if (newDesc !== null) task.desc = newDesc.trim();
+  const newDate = prompt("Edit date (YYYY-MM-DD):", task.date);
+  if (newDate !== null) task.date = newDate;
+  const newTime = prompt("Edit time (HH:MM):", task.time);
+  if (newTime !== null) task.time = newTime;
+  saveTasks();
+  renderTasks();
+}
+
+function handleDragStart(e) {
+  dragSrcEl = this;
+  this.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/html', this.innerHTML);
+}
+function handleDragOver(e) {
+  if (e.preventDefault) e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  return false;
+}
+function handleDragEnter() { this.classList.add('drag-over'); }
+function handleDragLeave() { this.classList.remove('drag-over'); }
+function handleDrop(e) {
+  if (e.stopPropagation) e.stopPropagation();
+  if (dragSrcEl !== this) {
+    const fromId = +dragSrcEl.dataset.id;
+    const toId = +this.dataset.id;
+    const fromIndex = tasks.findIndex(t => t.id === fromId);
+    const toIndex = tasks.findIndex(t => t.id === toId);
+    const [movedTask] = tasks.splice(fromIndex, 1);
+    tasks.splice(toIndex, 0, movedTask);
+    saveTasks(); renderTasks();
+  }
+  return false;
+}
+function handleDragEnd() {
+  this.classList.remove('dragging');
+  document.querySelectorAll('.task-card').forEach(c => c.classList.remove('drag-over'));
+}
+function enableDragAndDrop() {
+  document.querySelectorAll('.task-card').forEach(item => {
+    item.addEventListener('dragstart', handleDragStart);
+    item.addEventListener('dragenter', handleDragEnter);
+    item.addEventListener('dragover', handleDragOver);
+    item.addEventListener('dragleave', handleDragLeave);
+    item.addEventListener('drop', handleDrop);
+    item.addEventListener('dragend', handleDragEnd);
+  });
+}
+
+renderTasks();
+
+</script>
+</body>
+</html>
